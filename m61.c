@@ -16,6 +16,7 @@ static void *latest_ptr = NULL;
 static void *heap_min   = NULL;
 static void *heap_max   = NULL;
 
+
 void update_bounds(void *ptr, size_t sz) {
     if (ptr < heap_min || heap_min == NULL)
         heap_min = ptr;
@@ -26,6 +27,101 @@ void update_bounds(void *ptr, size_t sz) {
 int out_of_bounds(void *ptr) {
     return !heap_min || ptr < heap_min || ptr > heap_max;
 }
+
+typedef struct {
+    void *prev;
+    void *next;
+    size_t size;
+    char *filename;
+    int line;
+    void *cur;
+    char allocated;
+    int frequency;
+    // for the size linked list
+    void *hh_size_next;
+    // for the num allocations frequency linked list
+    void *hh_freq_next;
+    //char padding[7];
+} alloc_info;
+
+// setters and getter for the struct
+void *get_prev(void *ptr) {
+    return (((alloc_info*)ptr) - 1)->prev;
+}
+
+void *get_next(void *ptr) {
+    return (((alloc_info*)ptr) - 1)->next;
+}
+
+size_t get_size(void *ptr) {
+    return (((alloc_info)ptr) - 1)->size;
+}
+
+// const char *get_filename(void *ptr) {
+char *get_filename(void *ptr) {
+    return (((alloc_info*)ptr) - 1)-> filename;
+}
+
+int get_line(void *ptr) {
+    return (((alloc_info*)ptr) - 1)->line;
+}
+
+void *get_cur(void *ptr) {
+    return (((alloc_info*)ptr) - 1)->cur;
+}
+
+int is_allocated(void* ptr) {
+    return (((alloc_info*)ptr) - 1)->allocated && get_cur(ptr) == ptr;
+}
+
+int get_frequency(void *ptr) {
+    return (((alloc_info*)ptr) - 1)->frequency;
+}
+
+void *get_hh_size_next(void *ptr) {
+    return (((alloc_info*)ptr) - 1)->hh_size_next;
+}
+
+void set_prev(void *ptr, void *prev) {
+    (((alloc_info*)ptr) - 1)->prev = prev;
+}
+
+void set_next(void *ptr, void *next) {
+    (((alloc_info*)ptr) - 1)->next = next;
+}
+
+void set_size(void *ptr, size_t size) {
+    (((alloc_info)ptr) - 1)->size = size;
+}
+
+// void set_filename (void *ptr, const char *filename) ->> requires cast char*
+void set_filename(void *ptr, char *filename) {
+    (((alloc_info*)ptr) - 1)->filename = filename;
+}
+
+void set_line(void *ptr, int line) {
+    (((alloc_info*)ptr) - 1)->line = line;
+}
+
+void set_cur(void *ptr, void *cur) {
+    (((alloc_info*)ptr) - 1)->cur = cur;
+}
+
+void set_allocated(void *ptr, int alloc_status) {
+    (((alloc_info*)ptr) - 1)->allocated = alloc_status;
+}
+
+void set_frequency(void *ptr, int frequency) {
+    (((alloc_info*)ptr) - 1)->frequency = frequency;
+}
+
+void set_hh_size_next(void *ptr, void *hh_size_next) {
+    (((alloc_info*)ptr) - 1)->hh_size_next = hh_size_next;
+}
+
+
+// prototype for a heavy hitter function
+void insert_node(void *ptr);
 
 void *m61_malloc(size_t sz, const char *file, int line) {
     (void) file, (void) line;	// avoid uninitialized variable warnings
