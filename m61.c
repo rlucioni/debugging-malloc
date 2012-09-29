@@ -5,6 +5,28 @@
 #include <stdio.h>
 #include <inttypes.h>
 
+#define BOUNDARY_WRITE_BYTES 4
+#define SIZE_BUCKETS 32
+#define TERMINAL_WIDTH 80
+#define HH_THRESHOLD 0.25
+
+
+static struct m61_statistics cs61_stats;
+static void *latest_ptr = NULL;
+static void *heap_min   = NULL;
+static void *heap_max   = NULL;
+
+void update_bounds(void *ptr, size_t sz) {
+    if (ptr < heap_min || heap_min == NULL)
+        heap_min = ptr;
+    if (ptr + sz > heap_max)
+        heap_max = ptr + sz;
+}
+
+int out_of_bounds(void *ptr) {
+    return !heap_min || ptr < heap_min || ptr > heap_max;
+}
+
 void *m61_malloc(size_t sz, const char *file, int line) {
     (void) file, (void) line;	// avoid uninitialized variable warnings
     // Your code here.
