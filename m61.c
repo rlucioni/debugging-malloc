@@ -124,9 +124,55 @@ void set_hh_size_next(void *ptr, void *hh_size_next) {
 void insert_node(void *ptr);
 
 void *m61_malloc(size_t sz, const char *file, int line) {
-    (void) file, (void) line;	// avoid uninitialized variable warnings
-    // Your code here.
-    return malloc(sz);
+    // avoid uninitialized variable warnings
+    (void) file, (void) line;
+    
+    size_t total_alloc_sz = sz + sizeof(alloc_info)
+                               + BOUNDARY_WRITE_BYTES
+                               + sizeof(void*);
+
+    if ((int)sz < 0 || total_alloc_sz < sz) {
+        cs61_stats.fail_count++;
+        cs61_stats.fail_size += sz;
+        return NULL;
+    }
+
+    void *ptr = malloc(total_alloc_sz);
+
+    if (ptr == NULL) {
+        cs61_stats.fail_count++;
+        cs61_stats.fail_size += sz;
+        return ptr;
+    }
+
+    else {
+        cs61_stats.active_count++;
+        cs61_stats.active_size += sz;
+        cs61_stats.total_count++;
+        cs61_stats.total_size += sz;
+
+        memset((ptr + sizeof(alloc_info) + sz), ~0, BOUNDARY_WRITE_BYTES);
+
+        set_size(((alloc_info*)ptr) + 1, sz);
+        set_prev(((alloc_info*)ptr) + 1, latest_ptr);
+        set_next(((alloc_info*)ptr) + 1, NULL);
+
+        if (latest_ptr != NULL)
+            set_next(latest_ptr, ((alloc_info*)ptr) + 1);
+
+        latest_ptr = ((alloc_info*)ptr) + 1;
+
+        update_bounds(latest_ptr, sz);
+        set_filename(latest_ptr, file);
+        set_line(latest_ptr, line);
+        set_cur(latest_ptr, latest_ptr);
+        set_allocated(latest_ptr, 1);
+
+        // for heavy hitters
+        insert_node(latest_ptr)
+
+        return (latest_ptr);
+    }
 }
 
 void m61_free(void *ptr, const char *file, int line) {
