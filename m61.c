@@ -54,7 +54,7 @@ void *get_next(void *ptr) {
 }
 
 size_t get_size(void *ptr) {
-    return (((alloc_info)ptr) - 1)->size;
+    return (((alloc_info*)ptr) - 1)->size;
 }
 
 const char *get_filename(void *ptr) {
@@ -90,7 +90,7 @@ void set_next(void *ptr, void *next) {
 }
 
 void set_size(void *ptr, size_t size) {
-    (((alloc_info)ptr) - 1)->size = size;
+    (((alloc_info*)ptr) - 1)->size = size;
 }
 
 void set_filename(void *ptr, const char *filename) {
@@ -119,7 +119,7 @@ void set_hh_size_next(void *ptr, void *hh_size_next) {
 
 
 // prototype for a heavy hitter function
-void insert_node(void *ptr);
+//void insert_node(void *ptr);
 
 void *m61_malloc(size_t sz, const char *file, int line) {
     // avoid uninitialized variable warnings
@@ -167,7 +167,7 @@ void *m61_malloc(size_t sz, const char *file, int line) {
         set_allocated(latest_ptr, 1);
 
         // for heavy hitters
-        insert_node(latest_ptr)
+        //insert_node(latest_ptr);
 
         return (latest_ptr);
     }
@@ -178,7 +178,7 @@ void boundary_write_detect(void *ptr, const char *file, int line) {
     void *boundary = (char*)ptr + payload_bytes;
 
     for (int i = 0; i < BOUNDARY_WRITE_BYTES; i++) {
-        if (((char*)boundary)[i] == "\0") {
+        if (((char*)boundary)[i] == '\0') {
             printf("MEMORY BUG: %s:%d: detected wild write during free of pointer %p\n", file, line, ptr);
             abort();
         }
@@ -187,7 +187,7 @@ void boundary_write_detect(void *ptr, const char *file, int line) {
 
 void print_containing_block(void *ptr) {
     void *cur = latest_ptr;
-    int mind_dist = 0;
+    int min_dist = 0;
     size_t size = 0;
 
     while(cur) {
@@ -203,7 +203,7 @@ void print_containing_block(void *ptr) {
             cur = get_prev(cur);
     }
 
-    printf("  %s:%d: is %d bytes inside a %zd byte region allocated here\n",
+    printf("  %s:%d: %p is %d bytes inside a %zd byte region allocated here\n",
             get_filename(cur), get_line(cur), ptr, min_dist, size);
 }
 
@@ -224,7 +224,7 @@ void invalid_free_detect(void *ptr, const char *file, int line) {
         printf("MEMORY BUG: %s:%d: invalid free of pointer %p, not in heap\n", file, line, ptr);
         abort();
     }
-    else if (!is_allocated || removed(ptr)) {
+    else if (!is_allocated(ptr) || removed(ptr)) {
         if (get_cur(ptr) == ptr) {
             printf("MEMORY BUG: %s:%d: double free of pointer %p\n", file, line, ptr);
             printf("  %s:%d: pointer %p previously freed here\n", get_filename(ptr), get_line(ptr), ptr);
@@ -240,27 +240,89 @@ void invalid_free_detect(void *ptr, const char *file, int line) {
 
 
 void m61_free(void *ptr, const char *file, int line) {
-    (void) file, (void) line;	// avoid uninitialized variable warnings
-    // Your code here.
-    free(ptr);
+    // avoid uninitialized variable warnings
+    (void) file, (void) line;
+    
+    invalid_free_detect(ptr, file, line);
+    boundary_write_detect(ptr, file, line);
+    
+    cs61_stats.active_count--;
+    cs61_stats.active_size -= get_size(ptr);
+
+    void *prev = get_prev(ptr);
+    if (prev != NULL)
+        set_next(prev, get_next(ptr));
+
+    void *next = get_next(ptr);
+    if (next != NULL)
+        set_prev(next, prev);
+
+    if (latest_ptr == ptr)
+        latest_ptr = prev;
+
+    alloc_info a;
+
+    memcpy(&a, ((alloc_info*)ptr) - 1, sizeof(alloc_info));
+
+    a.allocated = 0;
+    a.filename = (char*)file;
+    a.line = line;
+
+    memcpy(((alloc_info*)ptr) - 1, &a, sizeof(alloc_info));
+
+    free(((alloc_info*) ptr) - 1);
 }
 
 void *m61_realloc(void *ptr, size_t sz, const char *file, int line) {
-    (void) file, (void) line;	// avoid uninitialized variable warnings
-    // Your code here.
-    return realloc(ptr, sz);
+    // avoid uninitialized variable warnings
+    (void) file, (void) line;
+
+    void *new_ptr = NULL;
+
+    if (sz != 0)
+        new_ptr = m61_malloc(sz, file, line);
+
+    if (ptr != NULL && new_ptr != NULL) {
+        size_t old_sz = get_size(ptr);
+        if (sz > old_sz)
+            memcpy(new_ptr, ptr, old_sz);
+        else
+            memcpy(new_ptr, ptr, sz);
+    }
+
+    if (ptr != NULL)
+        m61_free(ptr, file, line);
+
+    return new_ptr;
+}
+
+int will_overflow(unsigned int nmemb, unsigned int sz) {
+    unsigned int total_size = nmemb * sz;
+    return (total_size < sz || total_size < nmemb) && total_size;
 }
 
 void *m61_calloc(size_t nmemb, size_t sz, const char *file, int line) {
-    (void) file, (void) line;	// avoid uninitialized variable warnings
-    // Your code here.
-    return calloc(nmemb, sz);
+    // avoid uninitialized variable warnings
+    (void) file, (void) line;
+    
+    if (will_overflow(nmemb, sz)) {
+        cs61_stats.fail_count++;
+        cs61_stats.fail_size += 0;
+        return NULL;
+    }
+
+    void *ptr = m61_malloc(nmemb*sz, file, line);
+
+    if (ptr != NULL)
+        memset(ptr, 0, sz * nmemb);
+
+    return ptr;
 }
 
 void m61_getstatistics(struct m61_statistics *stats) {
     // Stub: set all statistics to 0
     memset(stats, 0, sizeof(struct m61_statistics));
-    // Your code here.
+    memcpy(stats, &cs61_stats, sizeof(struct m61_statistics));
 }
 
 void m61_printstatistics(void) {
@@ -274,5 +336,11 @@ malloc size:  active %10llu   total %10llu   fail %10llu\n",
 }
 
 void m61_printleakreport(void) {
-    // Your code here.
+    void *cur = latest_ptr;
+
+    while(cur != NULL) {
+        printf("LEAK CHECK: %s:%d: allocated object %p with size %zd\n",
+                get_filename(cur), get_line(cur), cur, get_size(cur));
+        cur = get_prev(cur);
+    }
 }
