@@ -57,8 +57,7 @@ size_t get_size(void *ptr) {
     return (((alloc_info)ptr) - 1)->size;
 }
 
-// const char *get_filename(void *ptr) {
-char *get_filename(void *ptr) {
+const char *get_filename(void *ptr) {
     return (((alloc_info*)ptr) - 1)-> filename;
 }
 
@@ -94,9 +93,8 @@ void set_size(void *ptr, size_t size) {
     (((alloc_info)ptr) - 1)->size = size;
 }
 
-// void set_filename (void *ptr, const char *filename) ->> requires cast char*
-void set_filename(void *ptr, char *filename) {
-    (((alloc_info*)ptr) - 1)->filename = filename;
+void set_filename(void *ptr, const char *filename) {
+    (((alloc_info*)ptr) - 1)->filename = (char*) filename;
 }
 
 void set_line(void *ptr, int line) {
@@ -174,6 +172,72 @@ void *m61_malloc(size_t sz, const char *file, int line) {
         return (latest_ptr);
     }
 }
+
+void boundary_write_detect(void *ptr, const char *file, int line) {
+    int payload_bytes = get_size(ptr);
+    void *boundary = (char*)ptr + payload_bytes;
+
+    for (int i = 0; i < BOUNDARY_WRITE_BYTES; i++) {
+        if (((char*)boundary)[i] == "\0") {
+            printf("MEMORY BUG: %s:%d: detected wild write during free of pointer %p\n", file, line, ptr);
+            abort();
+        }
+    }
+}
+
+void print_containing_block(void *ptr) {
+    void *cur = latest_ptr;
+    int mind_dist = 0;
+    size_t size = 0;
+
+    while(cur) {
+        int dist_from_block = ptr - cur;
+        if (!min_dist || dist_from_block < min_dist) {
+            min_dist = dist_from_block;
+            size = get_size(cur);
+        }
+
+        if (!get_prev(cur))
+            break;
+        else
+            cur = get_prev(cur);
+    }
+
+    printf("  %s:%d: is %d bytes inside a %zd byte region allocated here\n",
+            get_filename(cur), get_line(cur), ptr, min_dist, size);
+}
+
+int removed(void *ptr) {
+    if (ptr != NULL) {
+        void *prev = get_prev(ptr);
+        if (prev != NULL) {
+            void *next = get_next(prev);
+            return next != ptr;
+        }
+    }
+
+    return 0;
+}
+
+void invalid_free_detect(void *ptr, const char *file, int line) {
+    if(out_of_bounds(ptr)) {
+        printf("MEMORY BUG: %s:%d: invalid free of pointer %p, not in heap\n", file, line, ptr);
+        abort();
+    }
+    else if (!is_allocated || removed(ptr)) {
+        if (get_cur(ptr) == ptr) {
+            printf("MEMORY BUG: %s:%d: double free of pointer %p\n", file, line, ptr);
+            printf("  %s:%d: pointer %p previously freed here\n", get_filename(ptr), get_line(ptr), ptr);
+            abort();
+        }
+        else {
+            printf("MEMORY BUG: %s:%d: invalid free of pointer %p, not allocated\n", file, line, ptr);
+            print_containing_block(ptr);
+            abort();
+        }
+    }
+}
+
 
 void m61_free(void *ptr, const char *file, int line) {
     (void) file, (void) line;	// avoid uninitialized variable warnings
